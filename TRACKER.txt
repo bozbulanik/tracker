@@ -1,0 +1,19 @@
+  __               __          
+ / /________ _____/ /_____ ____
+/ __/ __/ _ `/ __/  '_/ -_) __/
+\__/_/  \_,_/\__/_/\_\\__/_/   
+                               
+Usage: tracker [OPTIONS] COMMAND [ARGS] 
+
+tracker - activity tracker for myself [version 0.0.1]
+
+Commands:
+	start 				Starts the tracker.
+	tui 				Start the graphical (TUI) version.
+	report 				Generate and display a report of the results.
+	help [COMMAND] 		Show general help or help about a specific subcommand.
+	
+
+Options:
+	-d, --dir DIRECTORY			Start the program with the specified directory for log file.
+	-h, --help					Show this help message and exit.

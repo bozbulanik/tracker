@@ -5,13 +5,13 @@ import time
 import math
 from datetime import datetime
 import subprocess
+import click
 
 DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
 LOG_INTERVAL = 100  # 1 minute in seconds
 
 class Tracker:
-
     def __init__(self):
         self.key_press_count: int = 0
         self.left_mouse_click_count: int = 0
@@ -73,18 +73,10 @@ class Tracker:
     def log_app_usage(self):
         app_name = self.get_current_focused_app()
 
-        if self.app_start_time == 0:
-            self.app_start_time = time.time()
-        
-        elapsed_time = int(time.time() - self.app_start_time)
-
-        #print(str(app_name) + " is working for " + str(elapsed_time) + " seconds.")
         if app_name in self.app_counts:
-            self.app_counts[app_name] += elapsed_time
+            self.app_counts[app_name] += 1
         else:
-            self.app_counts[app_name] = elapsed_time
-            
-        self.app_start_time = time.time()
+            self.app_counts[app_name] = 1
 
     def on_keyboard_press(self, key):
         self.key_press_count += 1
@@ -156,7 +148,45 @@ class Tracker:
         except KeyboardInterrupt:
             print("Tracker stopped.")
 
-if __name__ == "__main__":
+
+@click.group()
+@click.option('-d', '--dir', type=click.Path(exists=True), help="Specify the directory to save log.csv.")
+@click.pass_context
+def tracker(ctx, dir):
+    ctx.ensure_object(dict)
+    ctx.obj['dir'] = dir
+
+@tracker.command(name='start')
+def start_tracking():
+    """Starts the tracking app."""
     tracker = Tracker()
     tracker.run()
 
+@tracker.command(name='tui')
+def start_tui():
+    """Starts the TUI version of the app."""
+    # Implement TUI functionality here
+    print("Starting TUI version...")  # Placeholder for actual TUI start logic
+
+@tracker.command(name='report')
+@click.option('-d', '--dir', type=click.Path(exists=True), help="Directory to read the log.csv from.")
+def report_usage(dir):
+    """Prints the reports of the tracker's current usage statistics."""
+    log_file = os.path.join(dir or '', 'log.csv')
+    if os.path.exists(log_file):
+        with open(log_file, 'r') as file:
+            print(file.read())  # Replace with actual report printing logic
+    else:
+        print(f"No log file found in {log_file}.")
+
+@tracker.command(name='help')
+@click.argument('command', required=False)
+def help_command(command):
+    """Prints help text."""
+    if command:
+        click.echo(f"Help for command: {command}")  # Replace with actual help text for specific command
+    else:
+        click.echo(cli.get_help())
+
+if __name__ == "__main__":
+    tracker()
