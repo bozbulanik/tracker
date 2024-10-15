@@ -17,6 +17,9 @@ import math
 from datetime import datetime
 import subprocess
 import click
+from rich.console import Console
+from rich import print
+from rich.prompt import Prompt
 
 DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
@@ -137,6 +140,7 @@ class Tracker:
         mouse_listener.start()
 
         self.print_log = print_log
+        self.console = Console()
 
     def clear_counts(self):
         self.key_press_count = 0
@@ -254,10 +258,15 @@ class Tracker:
                 if elapsed_time >= LOG_INTERVAL:
                     self.log()
                     if(self.print_log):
-                        print("Logged.")
+                        now = datetime.now()
+                        log_date = now.strftime("%d/%m/%Y")
+                        log_time = now.strftime("%H:%M:%S")
+                        #self.console.log("Logged", log_locals=False, highlight=True)
+                        
+                        print(f"[{log_time}] - Logged.")
                     elapsed_time = 0
         except KeyboardInterrupt:
-            print("Tracker stopped.")
+            print("\nTracker stopped.")
 
     def run_tui(self):
         print(self.print_log)
@@ -286,7 +295,6 @@ def tracker_cli(ctx, dir, log):
     ctx.ensure_object(dict)
     ctx.obj['DIR'] = dir
     ctx.obj['LOG'] = log
-    
     if ctx.invoked_subcommand is None:
         click.echo(DEFAULT_HELP_TEXT)
             
@@ -295,7 +303,7 @@ def tracker_cli(ctx, dir, log):
 @click.pass_context
 def start_tracking(ctx):
     """Starts the tracking app."""
-    print("Tracking starts.")
+    print("Tracker starts...")
 
     tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
     tracker.run()
@@ -348,3 +356,4 @@ def main():
         
 if __name__ == "__main__":
     main()
+    
