@@ -20,6 +20,7 @@ import click
 from rich.console import Console
 from rich import print
 from rich.prompt import Prompt
+import ast
 
 DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
@@ -269,8 +270,74 @@ class Tracker:
             print("\nTracker stopped.")
 
     def run_tui(self):
-        print(self.print_log)
-        print(self.log_file_path)
+        print("Log: " + str(self.print_log))
+        print("Path: " + self.log_file_path)
+
+    def merge_dict(self, d, m):
+        for key, value in m.items():
+            if key in d:
+                d[key] += value
+            else:
+                d[key] = value
+
+        return d
+                
+    def report(self):
+        total_left_mouse_click = 0
+        total_right_mouse_click = 0
+        total_middle_mouse_click = 0
+        total_key_press = 0
+        total_mouse_movement = 0
+        total_mouse_scroll = 0
+        most_used_keys_statistics = {}
+        most_used_apps_statistics = {}
+        
+        with open(self.log_file_path, 'r', newline='') as csv_file:
+            reader = csv.reader(csv_file)
+            reader.__next__()
+            lines = list(reader)
+            
+            for row in lines:
+                total_left_mouse_click += int(row[2])
+                total_right_mouse_click += int(row[3])
+                total_middle_mouse_click += int(row[4])
+                total_key_press += int(row[5])
+                total_mouse_movement += float(row[6])
+                total_mouse_scroll += float(row[7])
+
+                muks_dict = ast.literal_eval(row[8])
+                most_used_keys_statistics = self.merge_dict(most_used_keys_statistics, muks_dict if row[8] != "None" else {})
+
+                muas_dict = ast.literal_eval(row[9])
+                most_used_apps_statistics = self.merge_dict(most_used_apps_statistics, muas_dict if row[9] != "None" else {})
+
+        total_sum_muks = sum(most_used_keys_statistics.values())
+        total_sum_muas = sum(most_used_apps_statistics.values())
+        most_used_keys_statistics = dict(sorted(most_used_keys_statistics.items(), key=lambda x: x[1], reverse=True))     
+        most_used_apps_statistics = dict(sorted(most_used_apps_statistics.items(), key=lambda x: x[1], reverse=True))     
+
+        percentage_data_muks = {key: (value / total_sum_muks) * 100 for key, value in most_used_keys_statistics.items()}
+        percentage_data_muas = {key: (value / total_sum_muas) * 100 for key, value in most_used_apps_statistics.items()}
+        
+        print("Total Left Mouse Click: " + str(total_left_mouse_click))
+        print("Total Right Mouse Click: " + str(total_right_mouse_click))
+        print("Total Middle Mouse Click: " + str(total_middle_mouse_click))
+        print("Total Key Presses: " + str(total_key_press))
+        print("Total Mouse Movement In Meters: " + str(total_mouse_movement))
+        print("Total Mouse Scroll Delta Accumulation: " + str(total_mouse_scroll))
+        
+        print("Most Used Keys Statistics: ")
+        for key, percentage in list(percentage_data_muks.items())[:5]:
+            total_presses = most_used_keys_statistics[key]
+            print(f"{key}  - {percentage:.2f}%  -  {total_presses} presses")
+
+        print("Most Used Apps Statistics: ")
+        for app, percentage in list(percentage_data_muas.items())[:5]:
+            total_seconds = most_used_apps_statistics[app]
+            print(f"{app}  - {percentage:.2f}%  -  {total_seconds} seconds")
+    
+
+                
 
 class CLIGroup(click.Group):
     def format_help(self, ctx, formatter):
@@ -285,6 +352,7 @@ class CLIGroup(click.Group):
         return cmd
 
     
+
 
 @click.group(cls=CLIGroup, context_settings=CONTEXT_SETTINGS, invoke_without_command=True, epilog='Check out https://github.com/bozbulanik/tracker for more details.')
 @click.option('-d', '--dir', type=click.Path(dir_okay=True, file_okay=False, resolve_path=True), help="Specify the directory to save log.csv.")
@@ -303,7 +371,7 @@ def tracker_cli(ctx, dir, log):
 @click.pass_context
 def start_tracking(ctx):
     """Starts the tracking app."""
-    print("Tracker starts...")
+    print("Starting tracker...")
 
     tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
     tracker.run()
@@ -312,21 +380,17 @@ def start_tracking(ctx):
 @click.pass_context
 def start_tui(ctx):
     """Starts the TUI version of the app."""
-    print("Starting TUI version...")
+    print("Starting tracker-tui...")
     tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
     tracker.run_tui()
     
 @tracker_cli.command(name='report')
-@click.option('-d', '--dir', type=click.Path(exists=True), help="Directory to read the log.csv from.")
-def report_usage(dir):
+@click.pass_context
+def report_usage(ctx):
     """Prints the reports of the tracker's current usage statistics."""
-    log_file = os.path.join(dir or '', 'log.csv')
-    if os.path.exists(log_file):
-        with open(log_file, 'r') as file:
-            print(file.read())
-    else:
-        print(f"No log file found in {log_file}.")
-
+    tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
+    tracker.report()    
+        
 @tracker_cli.command(name='help', options_metavar='[COMMAND]')
 @click.argument('command', required=False)
 def help_command(command):
