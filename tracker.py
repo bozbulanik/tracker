@@ -11,8 +11,94 @@ DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
 LOG_INTERVAL = 100  # 1 minute in seconds
 
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+DEFAULT_HELP_TEXT = r"""
+  __               __          
+ / /________ _____/ /_____ ____
+/ __/ __/ _ `/ __/  '_/ -_) __/ 
+\__/_/  \_,_/\__/_/\_\\__/_/   
+                               
+Usage: tracker [OPTIONS] COMMAND [ARGS] 
+
+tracker - activity tracker for myself [version 0.0.1]
+
+Commands:
+    start                 Starts the tracker.
+    tui                   Start the graphical (TUI) version.
+    report                Generate and display a report of the results.
+    help [COMMAND]        Show general help or help about a specific subcommand.
+
+Options:
+    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
+    -h, --help            Show this help message and exit.
+    -l, --log             Print program logs.
+    -v, --version         Print version.
+
+"""
+
+START_HELP_TEXT = r"""
+Usage: tracker [OPTIONS] start 
+
+tracker-start for tracker
+
+Options:
+    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
+    
+Description:
+    Starts the tracking app in the background and logs what it tracked to log.csv file.
+
+Examples:
+    tracker start
+    tracker -d /path/to/dir start
+"""
+TUI_HELP_TEXT = r"""
+Usage: tracker [OPTIONS] tui 
+
+tracker-tui for tracker
+
+Options:
+    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
+
+Description:
+    Starts the TUI app for real-time activity tracking.
+    Logs what it tracked to log.csv file.
+
+Examples:
+    tracker tui
+    tracker -d /path/to/dir tui
+"""
+REPORT_HELP_TEXT = r"""
+Usage: tracker [OPTIONS] report 
+
+tracker-report for tracker
+
+Options:
+    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
+
+Description:
+    Prints a report from a specified log.csv file to the terminal.
+
+Examples:
+    tracker report
+    tracker -d /path/to/dir report
+"""
+HELP_HELP_TEXT = r"""
+Usage: tracker help [COMMAND]
+
+tracker-help for tracker
+
+Description:
+    Prints a help text or a help text for specified command.
+
+Examples:
+    tracker help
+    tracker help tui
+    tracker help start
+"""
+
+
 class Tracker:
-    def __init__(self):
+    def __init__(self, log_dir=None, print_log=None):
         self.key_press_count: int = 0
         self.left_mouse_click_count: int = 0
         self.right_mouse_click_count: int = 0
@@ -24,11 +110,21 @@ class Tracker:
         self.app_counts: dict = {}
         self.app_start_time: float = 0
 
+        self.log_dir = log_dir
+        
+        if(self.log_dir == None):
+            self.log_file_path = "log.csv"
+        else:
+            os.makedirs(self.log_dir, exist_ok=True)
+            self.log_file_path = os.path.join(self.log_dir, 'log.csv')
+        
         keyboard_listener = keyboard.Listener(on_press=self.on_keyboard_press)
         mouse_listener = mouse.Listener(on_click=lambda x, y, b, p: self.on_mouse_click(x, y, b, p), on_move=self.on_mouse_move, on_scroll=self.on_mouse_scroll)
 
         keyboard_listener.start()
         mouse_listener.start()
+
+        self.print_log = print_log
 
     def clear_counts(self):
         self.key_press_count = 0
@@ -126,8 +222,10 @@ class Tracker:
             app_counts_sorted or "None",
         ]
 
-        file_exists = os.path.exists('log.csv')
-        with open('log.csv', 'a', newline='') as csv_file:
+        
+        file_exists = os.path.exists(self.log_file_path)
+        
+        with open(self.log_file_path, 'a', newline='') as csv_file:
             writer = csv.writer(csv_file)
             if not file_exists:
                 writer.writerow(['Log Date', 'Log Time', 'Left Click', 'Right Click', 'Middle Click', 'Keypress', 'Mouse Distance (meters)', 'Scroll Distance (delta accumulation)', 'Most Used Keys (presses)', 'Most Used Apps (seconds)'])
@@ -148,45 +246,92 @@ class Tracker:
         except KeyboardInterrupt:
             print("Tracker stopped.")
 
+    def run_tui(self):
+        print("I'm in.")
+        print(self.log_file_path)
 
-@click.group()
-@click.option('-d', '--dir', type=click.Path(exists=True), help="Specify the directory to save log.csv.")
+
+class CLIGroup(click.Group):
+    def format_help(self, ctx, formatter):
+        formatter.write(DEFAULT_HELP_TEXT)
+
+    def get_command(self, ctx, cmd_name):
+        """Handle invalid commands."""
+        cmd = click.Group.get_command(self, ctx, cmd_name)
+        if cmd is None:
+            click.echo(f"\nInvalid command: {cmd_name} \n\nPlease type (tracker help) to see available commands.\n")
+            ctx.exit()
+        return cmd
+
+    
+
+@click.group(cls=CLIGroup, context_settings=CONTEXT_SETTINGS, invoke_without_command=True, epilog='Check out https://github.com/bozbulanik/tracker for more details.')
+@click.option('-d', '--dir', type=click.Path(dir_okay=True, file_okay=False, resolve_path=True), help="Specify the directory to save log.csv.")
+@click.option('-l', '--log', is_flag=True, help="Print program logs.")
+@click.version_option(version='0.0.1')
 @click.pass_context
-def tracker(ctx, dir):
+def tracker_cli(ctx, dir, log):
     ctx.ensure_object(dict)
-    ctx.obj['dir'] = dir
+    ctx.obj['DIR'] = dir
+    ctx.obj['LOG'] = log
+    
+    if ctx.invoked_subcommand is None:
+        click.echo(DEFAULT_HELP_TEXT)
+            
 
-@tracker.command(name='start')
-def start_tracking():
+@tracker_cli.command(name='start')
+@click.pass_context
+def start_tracking(ctx):
     """Starts the tracking app."""
-    tracker = Tracker()
+    
+    tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
     tracker.run()
 
-@tracker.command(name='tui')
-def start_tui():
+@tracker_cli.command(name='tui')
+@click.pass_context
+def start_tui(ctx):
     """Starts the TUI version of the app."""
-    # Implement TUI functionality here
-    print("Starting TUI version...")  # Placeholder for actual TUI start logic
-
-@tracker.command(name='report')
+    print("Starting TUI version...")
+    tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
+    tracker.run_tui()
+    
+@tracker_cli.command(name='report')
 @click.option('-d', '--dir', type=click.Path(exists=True), help="Directory to read the log.csv from.")
 def report_usage(dir):
     """Prints the reports of the tracker's current usage statistics."""
     log_file = os.path.join(dir or '', 'log.csv')
     if os.path.exists(log_file):
         with open(log_file, 'r') as file:
-            print(file.read())  # Replace with actual report printing logic
+            print(file.read())
     else:
         print(f"No log file found in {log_file}.")
 
-@tracker.command(name='help')
+@tracker_cli.command(name='help', options_metavar='[COMMAND]')
 @click.argument('command', required=False)
 def help_command(command):
     """Prints help text."""
     if command:
-        click.echo(f"Help for command: {command}")  # Replace with actual help text for specific command
+        match command:
+            case "start":
+                print(START_HELP_TEXT)
+            case "tui":
+                print(TUI_HELP_TEXT)
+            case "report":
+                print(REPORT_HELP_TEXT)
+            case "help":
+                print(HELP_HELP_TEXT) # I know...
+            case _:
+                print("\nInvalid argument. Please type (tracker help) to see available commands.\n")
     else:
-        click.echo(cli.get_help())
+        click.echo(DEFAULT_HELP_TEXT)
 
+
+def main():
+    try:
+        tracker_cli(prog_name="tracker", standalone_mode=False)
+    except click.exceptions.UsageError as e:
+        click.echo(f"\n{e} \n\nPlease type (tracker help) to see available options.\n")
+                    
+        
 if __name__ == "__main__":
-    tracker()
+    main()
