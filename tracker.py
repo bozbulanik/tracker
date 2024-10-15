@@ -1,3 +1,14 @@
+"""
+    File name: tracker.py
+    Author: Emek Kırarslan (bozbulanik)
+    E-mail: "kirarslanemek@gmail.com"
+    Date created: 13/10/2024 - 20:14:44
+    Date last modified: 15/10/2024
+    Python Version: 3.12.6
+    Version: 0.0.1
+    License: GNU-GPLv3
+    Status: Production
+"""    
 from pynput import keyboard, mouse
 import os
 import csv
@@ -20,7 +31,8 @@ DEFAULT_HELP_TEXT = r"""
                                
 Usage: tracker [OPTIONS] COMMAND [ARGS] 
 
-tracker - activity tracker for myself [version 0.0.1]
+tracker - activity tracker for my personal use [version 0.0.1]
+by bozbulanik
 
 Commands:
     start                 Starts the tracker.
@@ -241,15 +253,15 @@ class Tracker:
                 elapsed_time += 1
                 if elapsed_time >= LOG_INTERVAL:
                     self.log()
-                    print("Logged.")
+                    if(self.print_log):
+                        print("Logged.")
                     elapsed_time = 0
         except KeyboardInterrupt:
             print("Tracker stopped.")
 
     def run_tui(self):
-        print("I'm in.")
+        print(self.print_log)
         print(self.log_file_path)
-
 
 class CLIGroup(click.Group):
     def format_help(self, ctx, formatter):
@@ -283,7 +295,8 @@ def tracker_cli(ctx, dir, log):
 @click.pass_context
 def start_tracking(ctx):
     """Starts the tracking app."""
-    
+    print("Tracking starts.")
+
     tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
     tracker.run()
 
