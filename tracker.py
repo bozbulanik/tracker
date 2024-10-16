@@ -3,12 +3,14 @@
     Author: Emek Kırarslan (bozbulanik)
     E-mail: "kirarslanemek@gmail.com"
     Date created: 13/10/2024 - 20:14:44
-    Date last modified: 15/10/2024
+    Date last modified: 16/10/2024
     Python Version: 3.12.6
     Version: 0.0.1
     License: GNU-GPLv3
     Status: Production
 """    
+
+from helpers import *
 from pynput import keyboard, mouse
 import os
 import csv
@@ -19,98 +21,35 @@ import subprocess
 import click
 from rich.console import Console
 from rich import print
-from rich.prompt import Prompt
 import ast
+from rich.table import Table
+from rich.align import Align
+
+from textual.app import App, ComposeResult
+from textual.containers import ScrollableContainer
+from textual.reactive import reactive
+from textual.widgets import Button, Footer, Header, Static
 
 DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
 LOG_INTERVAL = 100  # 1 minute in seconds
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
-DEFAULT_HELP_TEXT = r"""
-  __               __          
- / /________ _____/ /_____ ____
-/ __/ __/ _ `/ __/  '_/ -_) __/ 
-\__/_/  \_,_/\__/_/\_\\__/_/   
-                               
-Usage: tracker [OPTIONS] COMMAND [ARGS] 
 
-tracker - activity tracker for my personal use [version 0.0.1]
-by bozbulanik
+class TUI(App):
+    def __init__(self, log_dir=None, print_log=None, **kwargs):
+        super().__init__(**kwargs)
+        self.log_dir = log_dir
+        self.print_log = print_log
+        
+    BINDINGS = [("q", "quit", "Quit")]
+    TITLE = "Tracker TUI"
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Footer()
 
-Commands:
-    start                 Starts the tracker.
-    tui                   Start the graphical (TUI) version.
-    report                Generate and display a report of the results.
-    help [COMMAND]        Show general help or help about a specific subcommand.
 
-Options:
-    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
-    -h, --help            Show this help message and exit.
-    -l, --log             Print program logs.
-    -v, --version         Print version.
 
-"""
-
-START_HELP_TEXT = r"""
-Usage: tracker [OPTIONS] start 
-
-tracker-start for tracker
-
-Options:
-    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
-    
-Description:
-    Starts the tracking app in the background and logs what it tracked to log.csv file.
-
-Examples:
-    tracker start
-    tracker -d /path/to/dir start
-"""
-TUI_HELP_TEXT = r"""
-Usage: tracker [OPTIONS] tui 
-
-tracker-tui for tracker
-
-Options:
-    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
-
-Description:
-    Starts the TUI app for real-time activity tracking.
-    Logs what it tracked to log.csv file.
-
-Examples:
-    tracker tui
-    tracker -d /path/to/dir tui
-"""
-REPORT_HELP_TEXT = r"""
-Usage: tracker [OPTIONS] report 
-
-tracker-report for tracker
-
-Options:
-    -d, --dir DIRECTORY   Start the program with the specified directory for log file.
-
-Description:
-    Prints a report from a specified log.csv file to the terminal.
-
-Examples:
-    tracker report
-    tracker -d /path/to/dir report
-"""
-HELP_HELP_TEXT = r"""
-Usage: tracker help [COMMAND]
-
-tracker-help for tracker
-
-Description:
-    Prints a help text or a help text for specified command.
-
-Examples:
-    tracker help
-    tracker help tui
-    tracker help start
-"""
 
 
 class Tracker:
@@ -283,6 +222,7 @@ class Tracker:
         return d
                 
     def report(self):
+        grid = Table("Name", "Value",title="Tracker Statistics", expand=True, highlight=True, box=None)
         total_left_mouse_click = 0
         total_right_mouse_click = 0
         total_middle_mouse_click = 0
@@ -318,25 +258,31 @@ class Tracker:
 
         percentage_data_muks = {key: (value / total_sum_muks) * 100 for key, value in most_used_keys_statistics.items()}
         percentage_data_muas = {key: (value / total_sum_muas) * 100 for key, value in most_used_apps_statistics.items()}
+
         
-        print("Total Left Mouse Click: " + str(total_left_mouse_click))
-        print("Total Right Mouse Click: " + str(total_right_mouse_click))
-        print("Total Middle Mouse Click: " + str(total_middle_mouse_click))
-        print("Total Key Presses: " + str(total_key_press))
-        print("Total Mouse Movement In Meters: " + str(total_mouse_movement))
-        print("Total Mouse Scroll Delta Accumulation: " + str(total_mouse_scroll))
+        grid.add_row("Left Mouse Click" , str(total_left_mouse_click))
+        grid.add_row("Right Mouse Click" , str(total_right_mouse_click))
+        grid.add_row("Middle Mouse Click" , str(total_middle_mouse_click))
+        grid.add_row("Key Press", str(total_key_press))
+        grid.add_row("Mouse Movement" , f"{total_mouse_movement:.2f} meters")
+        grid.add_row("Mouse Scroll" , f"{total_mouse_scroll:.2f} px")
         
-        print("Most Used Keys Statistics: ")
+        muks_result = ""
         for key, percentage in list(percentage_data_muks.items())[:5]:
             total_presses = most_used_keys_statistics[key]
-            print(f"{key}  - {percentage:.2f}%  -  {total_presses} presses")
+            muks_result += f"{key}  - {percentage:.2f}%  -  {total_presses} presses" + "\n"
 
-        print("Most Used Apps Statistics: ")
+        grid.add_row("Top 5 Most Used Keys", muks_result)
+
+        muas_result = ""
         for app, percentage in list(percentage_data_muas.items())[:5]:
             total_seconds = most_used_apps_statistics[app]
-            print(f"{app}  - {percentage:.2f}%  -  {total_seconds} seconds")
-    
+            total_minutes = total_seconds // 60
+            muas_result += f"{app}  - {percentage:.2f}%  -  {total_minutes} minutes" + "\n"
 
+        grid.add_row("Top 5 Most Used Apps", muas_result)
+        
+        print(grid)
                 
 
 class CLIGroup(click.Group):
@@ -381,9 +327,10 @@ def start_tracking(ctx):
 def start_tui(ctx):
     """Starts the TUI version of the app."""
     print("Starting tracker-tui...")
-    tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
-    tracker.run_tui()
-    
+    #tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
+    #tracker.run_tui()
+    tui = TUI(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
+    tui.run()
 @tracker_cli.command(name='report')
 @click.pass_context
 def report_usage(ctx):
