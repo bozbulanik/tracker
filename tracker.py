@@ -3,7 +3,7 @@
     Author: Emek Kırarslan (bozbulanik)
     E-mail: "kirarslanemek@gmail.com"
     Date created: 13/10/2024 - 20:14:44
-    Date last modified: 16/10/2024
+    Date last modified: 30/10/2024
     Python Version: 3.12.6
     Version: 0.0.1
     License: GNU-GPLv3
@@ -24,32 +24,118 @@ from rich import print
 import ast
 from rich.table import Table
 from rich.align import Align
-
-from textual.app import App, ComposeResult
-from textual.containers import ScrollableContainer
-from textual.reactive import reactive
-from textual.widgets import Button, Footer, Header, Static
+import urwid
+import socket
+import sys
+from plotter import *
 
 DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
-LOG_INTERVAL = 100  # 1 minute in seconds
+LOG_INTERVAL = 1800  # 30 minutes
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
-class TUI(App):
-    def __init__(self, log_dir=None, print_log=None, **kwargs):
-        super().__init__(**kwargs)
-        self.log_dir = log_dir
-        self.print_log = print_log
+class TerminalGraphWidget(urwid.WidgetWrap):
+    def __init__(self, graph):
+        self.text = urwid.Text("", align="center")
+        self.graph = graph
+        self.line_box = urwid.LineBox(self.text)
+        self.filler = urwid.Filler(self.line_box, valign="middle")
+        self.padding = urwid.Padding(self.filler, align="center", width=int(self.graph.get_size()[0]+10))
+        super().__init__(self.padding)
+
+    def update(self):
+        canvas = "\n".join("".join(row).replace('\033[96m', '').replace('\033[0m', '') for row in self.graph.canvas)
+        self.text.set_text(canvas)
+
+class LivePage(urwid.WidgetWrap):
+    def __init__(self):
+        self.graph = TerminalGraph(title="Urwid Example", width=30, height=10, x_label="X", y_label="Value", x_divisions=5, y_divisions=8, x_min=0, x_max=15, y_min=0, y_max=15)
+        self.graph_widget = [TerminalGraphWidget(self.graph), TerminalGraphWidget(self.graph), TerminalGraphWidget(self.graph), TerminalGraphWidget(self.graph)]
+        self.graph_grid = urwid.GridFlow(self.graph_widget, cell_width=45, h_sep=2, v_sep=1, align='left')
         
-    BINDINGS = [("q", "quit", "Quit")]
-    TITLE = "Tracker TUI"
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Footer()
+        self.texts = [urwid.Text(f"Item {i}") for i in range(1, 10)]
+        self.pile = urwid.Pile(self.texts)
 
+        self.column = urwid.Columns([self.graph_grid, self.pile], dividechars=1)
+        # Filler and Padding
+        self.filler = urwid.Filler(self.column, valign="middle")
+        self.padding = urwid.Padding(self.filler, align="center")
+        self.scrollable = urwid.Scrollable(self.padding)
+        super().__init__(self.scrollable)
 
+    def update_graph(self, loop, user_data):
+        self.graph.clear()
+        x_range = (0, 2 * math.pi)
+        self.graph.plot_function(math.sin, x_range, x_shift=time.time(), y_shift=0)
+        self.graph.add_axes()
+        #self.graph.draw()
+        for x in self.graph_widget:
+            x.update()
+        loop.set_alarm_in(0.1, self.update_graph)
 
+class ReportPage(urwid.WidgetWrap):
+    def __init__(self):
+        self.text = urwid.Text(f"Report Page")
+        self.text = urwid.Filler(self.text)
+        super().__init__(self.text)
+
+class FooterWidget(urwid.WidgetWrap):
+    def __init__(self, left_text, right_text):
+        self.footer_text_left = urwid.Text(left_text, align="left")
+        self.footer_text_right = urwid.Text(right_text, align="right")
+        footer_elements = urwid.Columns([('weight', 1, self.footer_text_left),('weight', 1, self.footer_text_right)])
+        footer = urwid.AttrMap(footer_elements, 'footer')
+        super().__init__(footer)
+
+    def update_text(self, text):
+        self.footer_text_left.set_text(text)
+         
+class TUI(object):
+    def __init__(self, log_dir, print_log):
+        self.tab_names = ["Live", "Reports"]
+        self.pages = [LivePage(), ReportPage()]
+        self.current_tab = 0
+
+        self.header = self.build_header()
+        self.footer = FooterWidget(" STATUS","arrows: navigate, q: quit")
+        self.view = urwid.Frame(header=self.header, footer=self.footer, body=self.pages[self.current_tab])
+
+        self.palette = [
+            ("selected", "black", "light blue"),
+            ("default", "light gray", "black"),
+            ('footer', 'black', 'white'),
+            ('header', 'light gray', 'black'),
+        ]
+
+    def build_header(self):
+        columns = []
+        for idx, name in enumerate(self.tab_names):
+            txt = urwid.Text(name, align='center')
+            button = urwid.AttrMap(txt, None, focus_map="reversed")
+            if idx == self.current_tab:
+                button = urwid.AttrMap(button, "selected")
+            columns.append(('weight', 1, button))
+        return urwid.Columns(columns)
+
+    def refresh_view(self):
+        self.view.header = self.build_header()
+        self.view.body = self.pages[self.current_tab]
+
+    def unhandled_input(self, key):
+        if key in ('q', 'Q'):
+            raise urwid.ExitMainLoop()
+        elif key == 'right':
+            self.current_tab = (self.current_tab + 1) % len(self.tab_names)
+        elif key == 'left':
+            self.current_tab = (self.current_tab - 1) % len(self.tab_names)
+        self.refresh_view()
+
+    def run(self):
+        self.refresh_view()
+        self.loop = urwid.MainLoop(self.view, unhandled_input=self.unhandled_input, palette=self.palette)
+        self.loop.set_alarm_in(0.1, self.pages[0].update_graph)
+        self.loop.run()
 
 
 class Tracker:
@@ -188,9 +274,18 @@ class Tracker:
             writer.writerow(log_data)
 
         self.clear_counts()
-
+    def create_socket_lock(self, port=65432):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("localhost", port))
+        except OSError:
+            print("Another instance is already running.")
+            sys.exit()
+        return s
+        
     def run(self):
         elapsed_time = 0
+        lock = self.create_socket_lock()
         try:
             while True:
                 self.log_app_usage()
@@ -205,9 +300,15 @@ class Tracker:
                         
                         print(f"[{log_time}] - Logged.")
                     elapsed_time = 0
+                time.sleep(1)
         except KeyboardInterrupt:
-            print("\nTracker stopped.")
+            self.log()
+            now = datetime.now()
+            log_time = now.strftime("%H:%M:%S")
+            print(f"\n[{log_time}] Tracker stopped. Last activities are logged.")
 
+        lock.close()
+        
     def run_tui(self):
         print("Log: " + str(self.print_log))
         print("Path: " + self.log_file_path)
@@ -318,7 +419,7 @@ def tracker_cli(ctx, dir, log):
 def start_tracking(ctx):
     """Starts the tracking app."""
     print("Starting tracker...")
-
+    print("LOG INTERVAL: " + str(int(LOG_INTERVAL / 60)) + " minutes")
     tracker = Tracker(log_dir=ctx.obj['DIR'], print_log=ctx.obj['LOG'])
     tracker.run()
 
@@ -363,8 +464,9 @@ def main():
         tracker_cli(prog_name="tracker", standalone_mode=False)
     except click.exceptions.UsageError as e:
         click.echo(f"\n{e} \n\nPlease type (tracker help) to see available options.\n")
-                    
+        
         
 if __name__ == "__main__":
     main()
-    
+
+
