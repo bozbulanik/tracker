@@ -50,20 +50,45 @@ class TerminalGraphWidget(urwid.WidgetWrap):
 
 class LivePage(urwid.WidgetWrap):
     def __init__(self):
+        self.text = urwid.Text("tracker TUI")
+        
+        # Graph setup
         self.graph = TerminalGraph(title="Urwid Example", width=30, height=10, x_label="X", y_label="Value", x_divisions=5, y_divisions=8, x_min=0, x_max=15, y_min=0, y_max=15)
-        self.graph_widget = [TerminalGraphWidget(self.graph), TerminalGraphWidget(self.graph), TerminalGraphWidget(self.graph), TerminalGraphWidget(self.graph)]
+        self.graph_widget = [TerminalGraphWidget(self.graph) for _ in range(4)]
         self.graph_grid = urwid.GridFlow(self.graph_widget, cell_width=45, h_sep=2, v_sep=1, align='left')
         
-        self.texts = [urwid.Text(f"Item {i}") for i in range(1, 10)]
-        self.pile = urwid.Pile(self.texts)
+        # App pile with title and line box
+        self.app_title = urwid.Text("Application Items")
+        self.app_texts = [urwid.Text(f"Item {i}") for i in range(1, 10)]
+        self.app_pile = urwid.Pile([urwid.AttrMap(w, "list") for w in self.app_texts])
+        
+        # Combine app title and pile in a line box
+        self.app_box = urwid.LineBox(urwid.Pile([self.app_title, self.app_pile]))
 
-        self.column = urwid.Columns([self.graph_grid, self.pile], dividechars=1)
+        # Key pile with title and line box
+        self.key_title = urwid.Text("Key Items")
+        self.key_texts = [urwid.Text(f"Item {i}") for i in range(1, 10)]
+        self.key_pile = urwid.Pile([urwid.AttrMap(w, "list") for w in self.key_texts])
+        
+        # Combine key title and pile in a line box
+        self.key_box = urwid.LineBox(urwid.Pile([self.key_title, self.key_pile]))
+
+        # Add a gap between app_box and key_box
+        self.gap = urwid.Text("")  # Empty text for gap
+
+        # Combine app_box, gap, and key_box into texts_pile
+        self.texts_pile = urwid.Pile([self.app_box, self.gap, self.key_box])
+        
+        # Layout
+        self.column = urwid.Columns([self.graph_grid, self.texts_pile], dividechars=1)
+        self.allpile = urwid.Pile([self.text, self.column])
+
         # Filler and Padding
-        self.filler = urwid.Filler(self.column, valign="middle")
+        self.filler = urwid.Filler(self.allpile, valign="middle")
         self.padding = urwid.Padding(self.filler, align="center")
         self.scrollable = urwid.Scrollable(self.padding)
+        
         super().__init__(self.scrollable)
-
     def update_graph(self, loop, user_data):
         self.graph.clear()
         x_range = (0, 2 * math.pi)
@@ -106,6 +131,7 @@ class TUI(object):
             ("default", "light gray", "black"),
             ('footer', 'black', 'white'),
             ('header', 'light gray', 'black'),
+            ('list', 'light gray', 'black')
         ]
 
     def build_header(self):
