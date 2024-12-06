@@ -98,17 +98,16 @@ class Tracker:
         self.key_counts.clear()
         self.app_counts.clear()
         self.app_start_time = 0
-
-    def handle_altgr(self, key):
-        return SYMBOLS.get(key.char, "")
-        
+     
     def key_is_a_symbol(self, key):
         return str(key)[:4] != 'Key.'
     
     def key_to_str(self, key):
         s = str(key)
-        return f'<{s[4:]}> ' if not self.key_is_a_symbol(key) else s[1:-1]
-        
+        if(str(key) == "<65027>"):
+            return "<altgr>"
+        else:
+            return f'<{s[4:]}>' if not self.key_is_a_symbol(key) else s[1:-1]
     def get_current_focused_app(self) -> str:
         try:
             terminal_pid = subprocess.check_output(['xdotool', 'getwindowfocus', 'getwindowpid'], stderr=subprocess.STDOUT).strip().decode("utf-8")
@@ -147,14 +146,32 @@ class Tracker:
 
 
     # Idea and key logging snippets from the github user Ga68 (https://github.com/Ga68). Thank you :)
-    
+
     def log_key(self, key):
         modifiers_down = [k for k in self.keys_currently_down if k in MODIFIER_KEYS]
-        if list(set([Key.shift if k in [Key.shift, Key.shift_l, Key.shift_r] else k for k in modifiers_down])) == [Key.shift] and self.key_is_a_symbol(key):
-            modifiers_down = []
-        log_entry = self.handle_altgr(key) if "<65027>" in [str(k) for k in self.keys_currently_down] else ' + '.join([self.key_to_str(k) for k in modifiers_down] + [self.key_to_str(key)])
+
+        if Key.shift in modifiers_down and self.key_is_a_symbol(key):
+            modifiers_down.clear()
+
+        keys_down_str = [str(k) for k in self.keys_currently_down]
+        if "<65027>" in keys_down_str:
+            try:
+                char = SYMBOLS.get(key.char, "")
+                if char:
+                    log_entry = str(char)
+                else:
+                    log_entry = ' + '.join(map(self.key_to_str, self.keys_currently_down)).lower()
+            except AttributeError:
+                if modifiers_down:
+                    log_entry = ' + '.join(map(self.key_to_str, self.keys_currently_down)).lower()
+                else:
+                    log_entry = "<altgr> + " + f'<{str(key)[4:]}>'
+        else:
+            log_entry = ' + '.join(map(self.key_to_str, modifiers_down + [key]))
+
         self.key_counts[log_entry] = self.key_counts.get(log_entry, 0) + 1
     
+        
     def on_keyboard_press(self, key):
         self.key_press_count += 1
         #key_char = getattr(key, 'char', str(key).replace('Key.', ''))
