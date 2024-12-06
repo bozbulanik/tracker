@@ -12,6 +12,7 @@
 
 from helpers import *
 from pynput import keyboard, mouse
+from pynput.keyboard import Key, Listener
 import os
 import csv
 import time
@@ -31,9 +32,28 @@ from trackertui import *
 
 DPI = 96
 INCH_TO_METER = 0.0254  # 1 inch = 0.0254 meters
-LOG_INTERVAL = 1800  # 30 minutes
+LOG_INTERVAL = 1800  # 30 minutes / 1800
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+MODIFIER_KEYS = [
+    Key.alt, Key.alt_r, Key.alt_l, Key.cmd, Key.cmd_r, Key.cmd_l,
+    Key.ctrl, Key.ctrl_r, Key.ctrl_l, Key.shift, Key.shift_r, Key.shift_l
+]
+
+LOCKED_IN_GARBAGE_COLLECTION_LIMIT = 5
+
+SYMBOLS = {
+    'a': "â", 'b': "“", 'c': "¢", 'ç': "·", 'e': "€", 'f': "ª", 'ı': "î",
+    'i': "'", 'm': "µ", 'n': "”", 'o': "ô", 'ö': "×", 'r': "¶", 's': "ß",
+    'ş': "´", 't': "₺", 'u': "û", 'ü': "~", 'v': "„", 'y': "←", 'z': "«", 
+    'x': "»", 'q': "@", 'A': "Â", 'C': "©", 'Ç': "÷", 'I': "Î", 'M': "º", 
+    'N': "’", 'O': "Ô", 'R': "®", 'U': "Û", 'Ü': "¯", 'V': "‚", 'Y': "¥", 
+    'Z': "<", 'X': ">", 'Q': "Ω", '.': "˙", ',': "`", '<': "|", '>': "¦", 
+    '"': "<", 'é': "°", '1': ">", '2': "£", '3': "#", '4': "$", '5': "½", 
+    '6': "¾", '7': "{", '8': "[", '9': "]", '0': "}", '*': "\\", '-': "|", 
+    '!': "¡", "'": "²", '^': "³", '+': "¼", '%': "⅜", '(': "", ')': "±", 
+    '=': "°", '?': "¿"
+}
 
 class Tracker:
     def __init__(self, log_dir=None, print_log=None):
@@ -48,6 +68,8 @@ class Tracker:
         self.app_counts: dict = {}
         self.app_start_time: float = 0
 
+        self.keys_currently_down = []
+
         self.log_dir = log_dir
         
         if(self.log_dir == None):
@@ -56,7 +78,7 @@ class Tracker:
             os.makedirs(self.log_dir, exist_ok=True)
             self.log_file_path = os.path.join(self.log_dir, 'log.csv')
         
-        keyboard_listener = keyboard.Listener(on_press=self.on_keyboard_press)
+        keyboard_listener = keyboard.Listener(on_press=self.on_keyboard_press, on_release=self.on_keyboard_release)
         mouse_listener = mouse.Listener(on_click=lambda x, y, b, p: self.on_mouse_click(x, y, b, p), on_move=self.on_mouse_move, on_scroll=self.on_mouse_scroll)
 
         keyboard_listener.start()
@@ -77,6 +99,16 @@ class Tracker:
         self.app_counts.clear()
         self.app_start_time = 0
 
+    def handle_altgr(self, key):
+        return SYMBOLS.get(key.char, "")
+        
+    def key_is_a_symbol(self, key):
+        return str(key)[:4] != 'Key.'
+    
+    def key_to_str(self, key):
+        s = str(key)
+        return f'<{s[4:]}> ' if not self.key_is_a_symbol(key) else s[1:-1]
+        
     def get_current_focused_app(self) -> str:
         try:
             terminal_pid = subprocess.check_output(['xdotool', 'getwindowfocus', 'getwindowpid'], stderr=subprocess.STDOUT).strip().decode("utf-8")
@@ -113,11 +145,30 @@ class Tracker:
         else:
             self.app_counts[app_name] = 1
 
+    def log_key(self, key):
+        modifiers_down = [k for k in self.keys_currently_down if k in MODIFIER_KEYS]
+        if list(set([Key.shift if k in [Key.shift, Key.shift_l, Key.shift_r] else k for k in modifiers_down])) == [Key.shift] and self.key_is_a_symbol(key):
+            modifiers_down = []
+        log_entry = self.handle_altgr(key) if "<65027>" in [str(k) for k in self.keys_currently_down] else ' + '.join([self.key_to_str(k) for k in modifiers_down] + [self.key_to_str(key)])
+        self.key_counts[log_entry] = self.key_counts.get(log_entry, 0) + 1
+    
     def on_keyboard_press(self, key):
         self.key_press_count += 1
-        key_char = getattr(key, 'char', str(key).replace('Key.', ''))
-        self.key_counts[key_char] = self.key_counts.get(key_char, 0) + 1
-
+        #key_char = getattr(key, 'char', str(key).replace('Key.', ''))
+        #self.key_counts[key_char] = self.key_counts.get(key_char, 0) + 1
+        if key in self.keys_currently_down:
+            return
+        self.keys_currently_down.append(key)
+        if key not in MODIFIER_KEYS and str(key) != "<65027>":
+            self.log_key(key)
+            
+    def on_keyboard_release(self, key):
+        try:
+            self.keys_currently_down.remove(key)
+        except ValueError:
+            if len(self.keys_currently_down) >= LOCKED_IN_GARBAGE_COLLECTION_LIMIT and not any(k in self.keys_currently_down for k in MODIFIER_KEYS):
+                self.keys_currently_down.clear()
+        
     def on_mouse_click(self, x, y, button, pressed):
         if pressed:
             if button == mouse.Button.left:
@@ -145,8 +196,8 @@ class Tracker:
         log_date = now.strftime("%d/%m/%Y")
         log_time = now.strftime("%H:%M:%S")
 
-        key_counts_sorted = dict(sorted(self.key_counts.items(), key=lambda x: x[1], reverse=True)[:10])
-        app_counts_sorted = dict(sorted(self.app_counts.items(), key=lambda x: x[1], reverse=True)[:10])
+        key_counts_sorted = dict(sorted(self.key_counts.items(), key=lambda x: x[1], reverse=True)[:50])
+        app_counts_sorted = dict(sorted(self.app_counts.items(), key=lambda x: x[1], reverse=True)[:50])
 
         log_data = [
             log_date,
@@ -266,14 +317,14 @@ class Tracker:
         grid.add_row("Mouse Scroll" , f"{total_mouse_scroll:.2f} px")
         
         muks_result = ""
-        for key, percentage in list(percentage_data_muks.items())[:5]:
+        for key, percentage in list(percentage_data_muks.items())[:20]:
             total_presses = most_used_keys_statistics[key]
             muks_result += f"{key}  - {percentage:.2f}%  -  {total_presses} presses" + "\n"
 
         grid.add_row("Top 5 Most Used Keys", muks_result)
 
         muas_result = ""
-        for app, percentage in list(percentage_data_muas.items())[:5]:
+        for app, percentage in list(percentage_data_muas.items())[:20]:
             total_seconds = most_used_apps_statistics[app]
             total_minutes = total_seconds // 60
             muas_result += f"{app}  - {percentage:.2f}%  -  {total_minutes} minutes" + "\n"

@@ -1,6 +1,9 @@
 *.csv
 TRACKER.txt
 test.py
+test2.py
+test3.py
+start_tracker.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
