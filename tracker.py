@@ -145,6 +145,9 @@ class Tracker:
         else:
             self.app_counts[app_name] = 1
 
+
+    # Idea and key logging snippets from the github user Ga68 (https://github.com/Ga68). Thank you :)
+    
     def log_key(self, key):
         modifiers_down = [k for k in self.keys_currently_down if k in MODIFIER_KEYS]
         if list(set([Key.shift if k in [Key.shift, Key.shift_l, Key.shift_r] else k for k in modifiers_down])) == [Key.shift] and self.key_is_a_symbol(key):
